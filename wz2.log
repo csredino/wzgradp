@@ -1,0 +1,53 @@
+  p pbar (1) or pp (2) collider: 
+  CC or NC process: 
+  W+ (1) or W- (2) production:
+  Electron (1) or muon (2) decay:
+  0: LO only, 1: NLO - LO, 2: NLO 
+  only 2->2 or only 2->3 or both ?
+  (1): 2->2, (2): 2->3, (3): both 
+  only qq or only qg or both ?
+  (1): qq, (2): qg, (3): qq+qg 
+  no virtual or with virtual or only virtual ?
+  (0): no virtual, (1): with virtual , (2): only virtual 
+  no QCD or only QCD or or all ?
+  (0): no QCD, (1): with QCD , (2): only QCD 
+  no recombination (0) 
+  or with recombination (1) 
+  MRST2004QED (1) or CTEQ6.6 (2) 
+  0: mu=MV, 1: mu=.5*MV, 2: mu=2.*MV
+  FSR: introduction of a collinear cutoff?: 
+  (0): no, (1): yes 
+  delta_s or delta_c variation: (1): ds, (2): dc 
+  choice for delta_s (photon energy cut):
+  choice for delta_c (collinear cut):
+ hadvac -0.0275722153  0.0589309489  128.960338
+ delta_r=  0.0302150344
+ alpha_0 representation
+  Cuts for first lepton:
+  values of Etmin, and ymax?
+  
+  Cuts for the second lepton:
+  values of Etmin, ymax?
+  
+  Cuts for the photon:
+  values of Etmin, ymax?
+  Value of Minv cut (GeV):
+  Setup of the cuts done
+  Parameters for the integration with RENO: 
+  itmax and ncall for grid searching 
+  and precision calculation? 
+  Grid searching:
+  1 :  38.5065     +- 0.7151     tot: 38.5065     +- 0.72     chi2: 0.000    
+  2 :  38.0572     +- 0.1895     tot: 38.0866     +- 0.18     chi2:0.3688    
+  3 :  37.8243     +- 0.1372     tot: 37.9186     +- 0.11     chi2:0.8413    
+  4 :  37.8474     +- 0.1254     tot: 37.8877     +- 0.83E-01 chi2:0.6217    
+  5 :  37.9835     +- 0.1406     tot: 37.9123     +- 0.71E-01 chi2:0.5525    
+  Precision calculation:
+  1 :  37.9320     +- 0.5427E-01 tot: 37.9320     +- 0.54E-01 chi2: 0.000    
+  2 :  38.0152     +- 0.5401E-01 tot: 37.9738     +- 0.38E-01 chi2: 1.181    
+  3 :  37.9406     +- 0.5361E-01 tot: 37.9626     +- 0.31E-01 chi2:0.7175    
+  4 :  38.0371     +- 0.5426E-01 tot: 37.9811     +- 0.27E-01 chi2:0.9513    
+  5 :  38.0360     +- 0.5355E-01 tot: 37.9922     +- 0.24E-01 chi2:0.9228    
+  6 :  37.9132     +- 0.5350E-01 tot: 37.9789     +- 0.22E-01 chi2: 1.100    
+  7 :  38.0365     +- 0.5577E-01 tot: 37.9866     +- 0.20E-01 chi2: 1.071    
+  8 :  38.0171     +- 0.5479E-01 tot: 37.9903     +- 0.19E-01 chi2:0.9565    

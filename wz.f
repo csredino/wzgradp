@@ -1,0 +1,903 @@
+	program wzgrad
+c
+c***********************************************************************
+c
+c  Parton-level Monte Carlo Program for the Drell-Yan processes
+c
+c  CC: p p(pbar) -> gamma,Z -> l+ l- (+gamma/gluon) 
+c
+c  and 
+c
+c  NC: p p(pbar) -> W+- -> nu l+- (+gamma/gluon)
+c
+c  including the complete electroweak O(alpha) corrections, 
+c  multiple FS photon radiation using QED structure functions,
+c  EW 1-loop and 2-loop Sudakov logs, and O(alpha_s) corrections.
+c
+c  Start: October 2009
+c  End: tba
+c
+c  Interface with POWHEG: coming soon!
+c
+c  Main program
+c
+c  setup for comparison with the TeV4LHC (W) and Les Houches (Z) workshops 
+c
+c  Authors: U.Baur, C.Bernaciak, and D.Wackeroth
+c
+c***********************************************************************
+c
+	implicit none	
+	integer it1,it2,ncall1,ncall2
+	integer i,j,k,iout
+	real*8 rej,rej1,rej2,kfac
+c
+c declare variables for MPI
+c
+	integer t_start,t_end,ierr,n_proc,my_id
+c
+c
+c MPI header to to allow for parallel processing
+c
+	include 'mpif.h'
+c
+c common block with general information:
+c
+	include 'common.inc'
+c
+c initialization of common blocks:
+c
+	data mw,mz/80.398d0,91.1876d0/
+c         
+c external fermion masses
+c
+	real*8 me,mmu
+	common/par_memu/me,mmu
+	real*8 mff,mffs,mii
+	common/par_mass/mff,mffs,mii
+c
+c options
+c
+c G_mu: rep = 2, alpha_0: rep = 1
+c
+	integer rep,qcd,mzero
+	common/options/rep,qcd
+	common/zeromass/mzero
+	real*8 sl2eff,su2eff,sd2eff
+	common/s2eff/sl2eff,su2eff,sd2eff
+
+	data ntot,ncut,ncut_k,ncut_r/8*0/
+	data loglow,logup/0d0,1d0/
+	data conti,conti_tot/60*0d0/
+c
+c calculated  W and Z boson widths 
+c
+	real*8 gamz0,gamz1,gamw0,gamw1
+c
+c calculation of alphas
+c
+	real*8 alphas2
+c
+c array for tests:
+c
+	integer test(10)
+	common/par_test/test
+c
+c choice of collider:
+c
+	integer ppswitch
+	common/collider/ppswitch
+c
+c switch for choice of PDFs
+c	
+	integer ipdf
+	common/pdfswitch/ipdf
+c
+c switch for qq or qg initial state
+c	
+	integer qqg
+	common/par_parton/qqg
+c
+c transformation to smooth the Breit Wigner resonance:
+c
+	integer trafo
+	common/change/trafo
+c
+c switch for width
+c
+	integer wopt
+	common/widthopt/wopt
+c
+c choice which cutoff dependence is going to be tested:
+c
+	integer dsdc
+	common/choice/dsdc
+c
+c choice, if a collinear cutoff will be imposed (only for FSR)
+c
+	integer collcut
+	common/collinear/collcut
+c
+c fictious photon mass
+c
+	real*8 lambda
+	common/photon/lambda
+c
+	complex*16 ieps
+	common/cc/ieps
+c
+c choice of factorisation scheme (lfc=0: MSbar, lfc=1: DIS):
+c	
+	real*8 lfc
+	common/scheme/lfc
+c
+c choice of process (CC: 1, NC: 2):
+c
+	integer switch
+	common/process/switch
+c
+c switch for non-resonant contribution for CC
+c
+	integer qnonr
+	common/par_nonres/qnonr
+c
+c common block for multiple final-state photon radiation
+c
+	integer qfsrexp
+	real*8 fsrscale
+	common/multiple/fsrscale,qfsrexp
+c
+c common block for QCD switch
+c
+	integer qqcd
+	common/qcdswitch/qqcd
+c
+c common block with weak form factors for CC:
+c
+	complex*16 fvw,fvwp(2)
+	common/fac_weak/fvwp
+c
+c histograms	
+c
+	integer hmax,bmax,histo
+	parameter(hmax=55)
+	parameter(bmax=250)
+	integer eventsb(hmax,bmax),eventsh(hmax),parts(hmax),ncallh
+	real*8 mini(hmax),maxi(hmax),stepi(hmax)
+	real*8 averageh(hmax,bmax),sigmah(hmax,bmax)
+	real*8 dsigmah(hmax,bmax),dsigmah2(hmax,bmax,bmax)
+	integer eventsh2(hmax),eventsb2(hmax,bmax,bmax)
+        real*8 averageh2(hmax,bmax,bmax),sigmah2(hmax,bmax,bmax)
+	character*60 datafiles(70)
+        common/hloc/mini,maxi,stepi,parts
+	common/histo/eventsb,averageh,sigmah,eventsh
+	common/histo2/eventsb2,averageh2,sigmah2,eventsh2
+	integer ndim,it,ihist,nevents
+	common/par_integration/ndim,ihist,it,nevents
+c
+c alphas
+c
+	real*8 QCDL4,QCDL5,TMAS
+	common/W50512/QCDL4,QCDL5
+	integer NFL,LO
+	common/W50511/NFL,LO,TMAS
+c
+c file wz.res for results
+c
+c
+c initialize MPI (Must be done at top level of program to ensure it is intialized before any calls to MPI functions in subprograms)
+c	
+	call MPI_INIT(ierr)
+c
+c
+c
+c set variable names for processor ID and total number of processors for parallel processing
+c
+	call MPI_COMM_RANK(MPI_COMM_WORLD,my_id,ierr)
+	call MPI_COMM_SIZE(MPI_COMM_WORLD,n_proc,ierr)
+c
+c
+c
+c
+	iout=8
+	open(unit=iout,file='wz.res',status='unknown')
+c
+c
+c
+c Don't use 33,34 as file labels ! Used for data files for
+c mrstqed !!
+	datafiles(10)='dat.10'
+	datafiles(11)='dat.11'
+	datafiles(12)='dat.12'
+	datafiles(13)='dat.13'
+	datafiles(14)='dat.14'
+	datafiles(15)='dat.15'
+	datafiles(16)='dat.16'
+	datafiles(17)='dat.17'
+	datafiles(18)='dat.18'
+	datafiles(19)='dat.19'
+	datafiles(20)='dat.20'
+	datafiles(21)='dat.21'
+	datafiles(22)='dat.22'
+	datafiles(23)='dat.23'
+	datafiles(24)='dat.24'
+	datafiles(25)='dat.25'
+	datafiles(26)='dat.26'
+	datafiles(27)='dat.27'
+	datafiles(28)='dat.28'
+	datafiles(29)='dat.29'
+	datafiles(41)='dat.31'
+	datafiles(42)='dat.32'
+	datafiles(43)='dat.33'
+	datafiles(44)='dat.34'
+	datafiles(45)='dat.35'
+	datafiles(46)='dat.36'
+	datafiles(47)='dat.37'
+	datafiles(51)='dat.41'
+	datafiles(52)='dat.42'
+	datafiles(61)='dat.51'
+	datafiles(62)='dat.52'
+	do i=10,19
+	   open(unit=i,file=datafiles(i),status='unknown')
+	   open(unit=i+10,file=datafiles(i+10),status='unknown')
+	end do
+	do i=41,47
+	   open(unit=i,file=datafiles(i),status='unknown')
+	enddo
+	do i=51,52
+	   open(unit=i,file=datafiles(i),status='unknown')
+	   open(unit=i+10,file=datafiles(i+10),status='unknown')
+	end do
+c	
+c number of light flavours:
+c
+	nlf=5
+c
+c p pbar or pp collider:
+c
+	print*,' p pbar (1) or pp (2) collider: '
+	read*,ppswitch
+	if(ppswitch.eq.1)then
+	   write(iout,*)' p pbar collider '
+	   rs=1.96d3   
+	else if(ppswitch.eq.2)then
+	   write(iout,*)' pp collider '
+	   rs=10d3   
+c	   rs=14d3   
+	end if	      
+	write(iout,105)' Energy in the CM frame (GeV):',rs
+*
+c hadronic or partonic cross section:
+c 0: hadronic, 1:partonic
+c partonic: shat is set in config.f, pdf_fac is set to one
+*
+	test(10)=0
+c
+c choice of process:
+c
+	print*,' CC or NC process: '
+	read*,switch
+
+	if(switch.eq.1)then
+	   write(iout,*)' CC process '
+c
+c mass of the produced vector boson:
+c
+	   mv = mw
+
+	else if(switch.eq.2)then
+	   write(iout,*)' NC process '
+	   mv = mz
+	end if	      
+c
+c CC: W+ or W-  production:
+c
+	print*,' W+ (1) or W- (2) production:'
+	read*,test(1)
+	if(switch.eq.1)then
+	   if(test(1).eq.1)then
+	      write(iout,*)' W+ production'
+	   else if(test(1).eq.2)then
+	      write(iout,*)' W- production '
+	   end if
+	endif
+c       
+c decay in electron or muon  
+c i(q) + is(Q) -> f(nu,l-) + fs(l+) 
+	me=0.51099891d-3
+	mmu=105.6583668d-3
+	print*,' Electron (1) or muon (2) decay:'
+	read*,test(2)
+	if(test(2).eq.1)then
+	   write(iout,*)' Electron decay ', 'mfs=',me
+	   mffs=me
+	else if(test(2).eq.2)then
+	   write(iout,*)' Muon decay ', 'mfs=',mmu
+	   mffs=mmu
+	endif
+	if(switch.eq.1)mff=1d-5
+	if(switch.eq.2)mff=mffs
+c
+c common mass for initial-state quarks:
+c only used in photonic corrections to regularize the
+c collinear singularity.
+c
+	mii=1d-5
+
+	call setup_qed_cc
+
+	print*,' 0: LO only, 1: NLO - LO, 2: NLO '
+	read*,test(9)
+
+	if(test(9).eq.0)then
+	   write(iout,*)' LO only'
+	else if(test(9).eq.1)then
+	   write(iout,*)' NLO with LO subtracted'
+	else if(test(9).eq.2)then
+	   write(iout,*)' NLO '
+	end if
+
+	print*,' only 2->2 or only 2->3 or both ?'
+	print*,' (1): 2->2, (2): 2->3, (3): both '
+	read*,test(7)
+
+	if(test(7).eq.1)then
+	  write(iout,*)' only 2 -> 2 contributions'
+	else if(test(7).eq.2)then
+	  write(iout,*)' only 2 -> 3 contributions'
+	else if(test(7).eq.3)then
+	  write(iout,*)' 2 ->2 and 2 -> 3 contributions'
+	end if	
+
+	print*,' only qq or only qg or both ?'
+	print*,' (1): qq, (2): qg, (3): qq+qg '
+	read*,qqg
+
+	if(qqg.eq.1)then
+	  write(iout,*)' only qq contributions'
+	else if(qqg.eq.2)then
+	  write(iout,*)' only qg contributions'
+	else if(qqg.eq.3)then
+	  write(iout,*)' qq and qg contributions'
+	end if	
+
+c
+c choice, which subset of QED corrections shall be included (only for CC):
+c if only interference contribution, choose: test(3) = 3 !
+c
+	test(3)=4
+c
+c	print*,' Initial(1), Final-state (2) radiation, or all (4)'
+c	read*,test(3)
+
+	if(switch.eq.1)then
+	   if(test(3).eq.1)then
+	      write(iout,*)' Initial-state radiation ' 
+	   else if(test(3).eq.2)then
+	      write(iout,*)' Final-state radiation '
+	   else if(test(3).eq.3)then
+	      write(iout,*)' Interference '
+	   else if(test(3).eq.4)then
+	      write(iout,*)' All '
+	   end if
+	endif
+c
+c in case of final-state radiation: use of full calculation or
+c approximation a la Berends et al. (only for CC)
+c
+	test(4)=1
+c	print*,' final-state QED contribution: full (1) or '
+c	print*,' a la Berends et al. (2)'
+c	read*,test(4)
+
+	if(switch.eq.1)then
+	   if(test(4).eq.1) then
+	      write(iout,*)' final state QED contribution: full '
+	   else if(test(4).eq.2) then
+	      write(iout,*)
+	1	   ' final state QED contribution a la Berends et al. '
+	   end if
+	endif
+c       
+c choice if virtual contribution is included:
+c 0: no virtual, 1: with virtual, 2: only virtual
+c
+	print*,' no virtual or with virtual or only virtual ?'
+	print*,' (0): no virtual, (1): with virtual , (2): only virtual '
+	read*,test(6)
+
+	if(test(6).eq.0)then
+	  write(iout,*)' no virtual'
+	else if(test(6).eq.1)then
+	  write(iout,*)' with virtual'
+	else if(test(6).eq.2)then
+	  write(iout,*)' only virtual'
+	end if	
+c       
+c qnonr: switch for non-resonant contributions: 0: NOT included
+c                                               1: included	
+c only for CC:
+	qnonr=1
+c	print *,' non-resonant contributions: no (0); yes (1)'
+c	read *,qnonr
+c
+c for qnonr=1 separation in initial and final-state contribution
+c no longer possible !
+	if (qnonr.eq.1.and.test(6).ne.0) test(3)=4
+c
+c switch for multiple final-state photon radiation:
+c 0: no mFSR, 1: with mFSR, 2: only mFSR
+
+	read*,qfsrexp
+	fsrscale=mw
+c
+c switch for QCD corrections to W production
+c 0: no QCD, 1: with QCD, 2: only
+c
+	print*,' no QCD or only QCD or or all ?'
+	print*,' (0): no QCD, (1): with QCD , (2): only QCD '
+	read*,qqcd
+
+	if(qqcd.eq.0)then
+	  write(iout,*)' no QCD'
+	else if(qqcd.eq.1)then
+	  write(iout,*)' with QCD'
+	else if(qqcd.eq.2)then
+	  write(iout,*)' only QCD'
+	end if	
+c
+c with or without smearing+recombination 
+c
+	print*,' no recombination (0) '
+	print*,' or with recombination (1) '
+	read*,test(5)
+	if(test(5).eq.0) then
+	   write(iout,*)' no smearing, no recombination '
+	else if(test(5).eq.1) then
+	   write(iout,*)' with smearing, no recombination '
+	else if(test(5).eq.2) then
+	   write(iout,*)' with smearing, with recombination '
+	end if
+c
+c switch for width (1: constant width)
+c
+	wopt=1
+c 
+c with or without change of variables 
+c in order to smooth the Breit-Wigner:
+c
+	trafo = 1
+c
+c	print*,' without trafo (0) or with trafo (1) '
+c	read*,trafo
+c	if (trafo.eq.0) write(iout,*)' without transformation '
+c	if (trafo.eq.1) write(iout,*)' with transformation '
+c
+c switch for PDFs: 1: MRST2004QED, 2: CTEQ6.6
+c
+	print*,' MRST2004QED (1) or CTEQ6.6 (2) '
+	read*,ipdf
+c
+c factorization and renormalization scale:
+c
+	print*,' 0: mu=MV, 1: mu=.5*MV, 2: mu=2.*MV'
+	read*,test(8)
+	if(test(8).eq.0)then
+	  write(iout,*)' mu_F=mu_R=MV'
+	  mu_f=mv
+	  mu_r=mv
+	else if(test(8).eq.1)then
+	  write(iout,*)' mu_F=mu_R=.5*MV'
+	  mu_f=0.5d0*mv
+	  mu_r=0.5d0*mv
+	else if(test(8).eq.2)then
+	  write(iout,*)' mu_F=mu_R=2.*MV'
+	  mu_f=2d0*mv
+	  mu_r=2d0*mv
+	else if(test(8).eq.3)then
+	   write(iout,*)'variable scale'
+	end if	
+
+	print*,' FSR: introduction of a collinear cutoff?: '
+	print*,' (0): no, (1): yes '
+	read*,collcut
+c
+c in the case of a muonic final state, no collinear cutoff 
+c is imposed (muon mass regularizes mass singularity):
+c
+c	if (test(2).eq.2) collcut = 0
+c
+c e-case: collinear cutoff only allowed when recombination cut is imposed:
+c
+c	if (test(2).eq.1.and.test(5).eq.0) collcut = 0
+
+	if (collcut.eq.0) then
+	   write(iout,*)' FSR without collinear cutoff '
+	elseif (collcut.eq.1) then
+	   write(iout,*)' FSR with collinear cutoff '
+	end if
+c
+c choice, if delta_s or delta_c dependence shall be tested:
+c
+	print*,' delta_s or delta_c variation: (1): ds, (2): dc '
+	read*,dsdc
+
+	if (dsdc.eq.1) then
+
+c	   print*,' Boundaries for log10(delta_s):'
+c	   read*,loglow,logup	
+
+	   loglow = -3d0 
+	   logup = -1d0
+	   write(iout,105)' Boundaries for log10(delta_s):  '
+	1	,loglow,logup
+
+c	   print*,' choice for delta_c (collinear cut):'
+c	   read*,deltac	
+
+	   deltac = 0.001d0
+	   write(iout,105)' delta_c =  ',deltac
+
+	else if(dsdc.eq.2) then
+
+c	   print*,' choice for delta_s (photon energy cut):'
+c	   read*,deltas	
+
+	   deltas = 0.01d0
+	   write(iout,105)' delta_s =  ',deltas
+
+c	   print*,' Boundaries for log10(delta_c):'
+c	   read*,loglow,logup	
+
+	   loglow = -4d0
+	   logup = -2d0
+	   write(iout,105)' Boundaries for log10(delta_c):  ',
+	1	loglow,logup
+
+	else if (dsdc.eq.0) then
+
+	   print*,' choice for delta_s (photon energy cut):'
+	   read*,deltas	
+
+c	   deltas = 0.01d0
+	   write(iout,105)' delta_s =  ',deltas
+
+	   print*,' choice for delta_c (collinear cut):'
+	   read*,deltac	
+
+c	   deltac = 0.001d0
+	   write(iout,105)' delta_c =  ',deltac
+
+	end if
+c
+c choice of factorisation scheme:
+c
+c	print*,' choice of factorisation scheme:
+c	1	MSbar(0d0) or DIS(1d0) '
+c	read*,lfc
+c
+	lfc = 1d0
+	write(iout,*)' lambda_FC = ',lfc
+c
+c calculation of alpha_s (with lambda according to choice of pdf):
+c
+c warning: for LO results with LO alphas: set LO=1 (for NLO : LO=2)!     
+	LO=2
+	if (test(9).eq.0) LO=1
+	TMAS=171.2d0
+c QCDL4 and QCDL5 have to be chosen the same as used in the PDFs (here: CTEQ6)                                                      
+	QCDL4=0.326d0
+	QCDL5=0.226d0
+c	if(test(9).eq.0) then
+c	   QCDL4=0.215d0
+c	   QCDL5=0.165d0
+c	endif
+	NFL=5
+c	do i=1,5
+c	   if(i.eq.1)mu_r=91.1876d0
+c	   if(i.eq.2)mu_r=50d0
+c	   if(i.eq.3)mu_r=100d0
+c	   if(i.eq.4)mu_r=200d0
+c	   if(i.eq.5)mu_r=500d0
+	alphas=alphas2(mu_r)
+c	alphas=0.118d0
+c	print*,' mu_r=',mu_r,' alphas=',alphas
+c	enddo
+	write(iout,*)' mu_r=',mu_r,' alphas=',alphas
+c
+c fictitious photon mass
+c
+	lambda=1d0
+c
+c small imaginary part
+c
+	ieps=dcmplx(0d0,1d-18)
+c
+c input for electroweak corrections
+c
+	mh=115d0
+	call winput
+c
+c calculation of the total Z and W widths:
+c inclusion of QCD in the determination of the width: qcd=1 
+c all fermions are considered to be massless: mzero=1
+	qcd=0
+	mzero=1
+	rep=1
+c	call gztot(gamz0,gamz1)
+c	write(iout,*)'Z widths:',mz,gamz0,gamz1
+	gamz1=2.4952d0
+	gamz=gamz1
+c calculation of the total W width:
+c	call gwtot(gamw0,gamw1)
+c	write(iout,*)'W widths:',mw,gamw0,gamw1
+	gamw1=2.141d0
+	gamw=gamw1
+c	write(6,*)mh,mw,sl2eff,gamz
+	if(switch.eq.1)gamv=gamw
+	if(switch.eq.2)gamv=gamz
+c
+c choice of representation for the calculation of the amplitudes:
+c (rep=0: input value for alpha is used,
+c rep=1: alpha=alpha0, rep=2: G_mu scheme):
+	rep=1
+	if (rep.eq.2) then
+	   alpha=xmw*sw2/pi*w2*gfermi
+	elseif (rep.eq.1) then
+	   alpha=alpha0
+	end if
+
+	if (rep.eq.2) then
+	   write(iout,*) 'G_mu representation'
+	   write(6,*) 'G_mu representation'
+	elseif (rep.eq.1) then
+	   write(iout,*) 'alpha_0 representation'
+	   write(6,*) 'alpha_0 representation'
+	endif
+
+c formfactors for CC:
+	fvwp(1) = dcmplx(0d0,0d0)
+	fvwp(2) = dcmplx(0d0,0d0)
+
+	if(test(6).eq.0) then
+	   write(iout,*)' no virtual contribution '
+	else if(test(6).ge.1) then
+	   write(iout,*)' with virtual contribution '
+	   if(switch.eq.1) then
+	      if (test(3).le.2) then
+		 call formweak(test(3),fvw)
+		 fvwp(test(3)) = fvw
+	      elseif (test(3).eq.4) then
+		 do i = 1,2
+		    call formweak(i,fvw)
+		    fvwp(i) = fvw
+		 end do
+	      end if
+	      write(iout,*)' weak formfactor: ',fvwp
+	   endif
+	end if
+c
+c maximum number of particles in the final state:
+c
+	npart=3
+
+	call setup_cuts(iout,1)
+
+	print*,' Parameters for the integration with RENO: ' 
+	print*,' itmax and ncall for grid searching '
+	print*,' and precision calculation? '
+	read*,it1,ncall1,it2,ncall2
+c
+c setup of graphs:
+c
+c initialize number of bins, boundaries and bin size:
+c max. number of histograms: hmax
+c    
+	do i=1,hmax
+	   parts(i)=1
+	   mini(i)=0d0
+	   maxi(i)=1d0
+	   stepi(i)=1d0
+	end do
+	call setup_graphs(iout,3*npart-4+4)
+c initialization for histograms: (bmax: max. number of bins)
+	do i=1,hmax
+	   do j=1,bmax
+	      averageh(i,j)=0d0
+	      sigmah(i,j)=0d0
+	      eventsb(i,j)=0
+	      do k=1,bmax
+		 averageh2(i,j,k)=0d0
+		 sigmah2(i,j,k)=0d0
+		 eventsb2(i,j,k)=0
+	      enddo
+	   end do
+	   eventsh(i)=0
+	   eventsh2(i)=0
+	end do
+c
+c
+c
+c start timer
+c
+	t_start=MPI_WTIME()
+	
+c
+c
+c      
+c
+ 	call integration(3*npart-4+4,it1,ncall1,it2,ncall2,ierr,n_proc,my_id)
+c
+c
+c       much of the rest is writing to file, and does not benifit from parallelization anyways, so processor 0 will take over from here
+c
+	if (my_id == 0) then
+c
+c
+c write statistics
+c	
+
+	write(iout,*)' '
+	write(iout,*)'Number of events in precision calcul.:',ntot(2)
+	rej1=100d0*real(ncut(1))/real(ntot(1))
+	rej2=100d0*real(ncut(2))/real(ntot(2))
+	write(iout,106)' % of events rejected:',rej2,rej1 
+	rej1=100d0*real(ncut_k(1))/real(ntot(1))
+	rej2=100d0*real(ncut_k(2))/real(ntot(2))
+	write(iout,106) ' % rejected in 2->2 calculation:',rej2,rej1 
+	rej1=100d0*real(ncut_r(1))/real(ntot(1))
+	rej2=100d0*real(ncut_r(2))/real(ntot(2))
+	write(iout,106) ' % rejected in 2->3 calculation:',rej2,rej1 
+	write(iout,*) ' '
+	
+	rej=0.d0
+	do i=1,30
+	   rej=rej+conti_tot(i)
+	end do
+	write(iout,101)'Total cross sect. calculated from weight:',rej
+	write(iout,*) ' '
+c       
+c K-factor:	
+c
+	if(conti_tot(1).eq.0.d0)goto 20
+	kfac=100d0*(rej-conti_tot(1))/conti_tot(1)
+	write(iout,102) ' Size of EWK corrections(%):',kfac
+	write(iout,*) ' '
+c
+c sub-contributions:
+c
+ 20	if(rej.eq.0.d0)goto 30
+	write(iout,*) ' Sub-contributions:'	
+	write(iout,103)' Born',100d0*conti_tot(1)/rej,conti_tot(1)
+	write(iout,103)' k factor',100d0*(conti_tot(2)+
+	1    conti_tot(3)+conti_tot(4)+conti_tot(5))/rej,conti_tot(2)+
+	2    conti_tot(3)+conti_tot(4)+conti_tot(5)
+	write(iout,103)' virtual k factor',100d0*conti_tot(2)/rej,
+	1    conti_tot(2)
+	write(iout,103)' soft k factor',100d0*conti_tot(3)/rej,
+	1    conti_tot(3)
+	write(iout,103)' coll. k factor',
+	1    100d0*(conti_tot(4)+conti_tot(5))/rej,conti_tot(4)+conti_tot(5)
+	write(iout,103)' exp. mFSR:',
+	1    100d0*conti_tot(6)/rej,conti_tot(6)
+	write(iout,103)' real, hard photon radiation',
+	1    100d0*conti_tot(10)/rej,conti_tot(10)
+	write(iout,103)' real, hard gluon radiation',
+	1    100d0*conti_tot(11)/rej,conti_tot(11)
+c
+ 30	continue
+c
+c close output file:
+c
+	close(iout)	
+c
+c Format statements:
+c
+ 101	format(a45,2(d10.3))
+ 102	format(a30,f5.1)
+ 103	format(a27,':',f7.1,' %  ',d12.5,' pb')
+ 105	format(a31,2(d10.3,'  '))
+ 110	format(2(a10,f8.5))
+ 106	format(a45,f5.1,'(',f5.1,')')
+c filling of histograms
+	ncallh=nevents
+	do j=10,19
+	   histo=j
+	   do i=1,parts(histo)
+	      dsigmah(histo,i)=dsqrt(dabs(sigmah(histo,i)-
+	1	   averageh(histo,i)**2/ncallh))
+	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo),
+	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo)+
+c	1	   stepi(histo)/2d0,
+c	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')stepi(histo)/2d0+(i-1)*stepi(histo),
+c	1	   averageh(histo,i)*1d3,dsigmah(histo,i)*1d3
+	   end do
+	end do
+	do j=20,29
+	   histo=j
+	   do i=1,parts(histo)
+	      dsigmah(histo,i)=dsqrt(dabs(sigmah(histo,i)-
+	1	   averageh(histo,i)**2/ncallh))
+	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo),
+	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo)+
+c	1	   stepi(histo)/2d0,
+c	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')stepi(histo)/2d0+(i-1)*stepi(histo),
+c	1	   averageh(histo,i)*1d3,dsigmah(histo,i)*1d3
+	   end do
+	end do
+	do j=41,46
+	   histo=j-10
+	   do i=1,parts(histo)
+	      dsigmah(histo,i)=dsqrt(dabs(sigmah(histo,i)-
+	1	   averageh(histo,i)**2/ncallh))
+	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo),
+	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo)+
+c	1	   stepi(histo)/2d0,
+c	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')stepi(histo)/2d0+(i-1)*stepi(histo),
+c	1	   averageh(histo,i)*1d3,dsigmah(histo,i)*1d3
+	   end do
+	end do
+	do j=51,52
+	   histo=j-10
+	   do i=1,parts(histo)
+	      dsigmah(histo,i)=dsqrt(dabs(sigmah(histo,i)-
+	1	   averageh(histo,i)**2/ncallh))
+	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo)+
+	1	   stepi(histo)/2d0,
+	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(4g16.8)')stepi(histo)/2d0+(i-1)*stepi(histo),
+c	1	   averageh(histo,i)*1d3,dsigmah(histo,i)*1d3
+	   end do
+	end do
+	do j=61,62
+	   histo=j-10
+	   do i=1,parts(histo)
+	      dsigmah(histo,i)=dsqrt(dabs(sigmah(histo,i)-
+	1	   averageh(histo,i)**2/ncallh))
+	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo),
+	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')mini(histo)+(i-1)*stepi(histo)+
+c	1	   stepi(histo)/2d0,
+c	1	   averageh(histo,i),dsigmah(histo,i)
+c	      write(j,'(3g16.8)')stepi(histo)/2d0+(i-1)*stepi(histo),
+c	1	   averageh(histo,i)*1d3,dsigmah(histo,i)*1d3
+	   end do
+	end do
+c
+c double differential distribution
+	histo=37
+	do i=1,parts(36)
+	   do j=1,parts(34)
+c	      dsigmah2(histo,i)=dsqrt(dabs(sigmah2(histo,i)-
+c	1	   averageh2(histo,i)**2/ncallh))
+c	      write(47,*)mini(36)+(i-1)*stepi(36)+
+c	1	   stepi(36)/2d0,mini(34)+(j-1)*stepi(34)+
+c	1	   stepi(34)/2d0,averageh2(histo,i,j)
+	      write(47,*)mini(36)+(i-1)*stepi(36),
+	1	   mini(34)+(j-1)*stepi(34),
+	1	   averageh2(histo,i,j)
+	   end do
+	enddo
+c
+c stop timer
+	t_end=MPI_WTime()
+c
+	   print *,'Elapsed time = '
+	   print *,t_end-t_start ,' seconds'
+	endif
+c
+c turn off MPI
+c
+	call MPI_FINALIZE(ierr)
+c
+	end
+	
+
+
+

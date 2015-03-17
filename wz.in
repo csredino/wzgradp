@@ -1,0 +1,22 @@
+1			!1: p pbar collider 2: pp collider
+2			!1: W production (CC) 2: Z/gamma production (NC)
+1			!1: W+  2: W- production
+1			!1: electron, 2: muon
+0			!0: LO only; 1:NLO-LO; 2:NLO
+1			!1: only 2->2, 2: only 2->3, 3: both
+1			!1: only qq, 2: only qg (only for QCD O(alphas)) 3: both
+0			!0: no virtual ew, 1: with virtual ew; 2: only virtual ew
+0			!2: only exp., 1: with exp, 0: no exp. muliple FS photon radiation
+0			!0: no QCD 1: with QCD 2: only QCD O(alphas) corrections (only for CC)
+0			!0: no r., no s., 1: with s., no r. 2: with s., with r.
+2			!1: MRST2004QED or 2: CTEQ6.6 
+3			!0: mu=MW or MZ, 1: mu=0.5*(MW or MZ), 2: mu=2*(MW or MZ) 3: variable	 
+0			!final-state QED: without coll. cut (0), with coll. cut(1)
+0			!delta_s or delta_c variation: (1): ds, (2): dc (0) none 
+0.001d0		        !deltas
+0.0001d0			!deltac
+25d0 1d0		!Etmin and ymax for lepton1 (=electron or muon)
+25d0 1d0              !Etmin and ymax for lepton2 (=neutrino or electron/muon)
+0d0 100d0               !Etmin and ymax for photon or gluon
+50d0			!Minvmin or MTmin for lepton pair 
+5 10000 8 50000	        !itmax and ncall for grid and precision calculation
